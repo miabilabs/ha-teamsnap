@@ -1,0 +1,26 @@
+# Python
+*.pyc
+*.pyo
+__pycache__/
+*.swp
+*.swo
+
+# Virtual environment
+.env/
+.venv/
+ENV/
+env/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Home Assistant
+/config/
+
+# OS or editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
