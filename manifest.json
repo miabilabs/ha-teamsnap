@@ -2,8 +2,12 @@
   "domain": "teamsnap",
   "name": "TeamSnap",
   "documentation": "https://github.com/miabilabs/ha-teamsnap",
+  "issue_tracker": "https://github.com/miabilabs/ha-teamsnap/issues",
+  "codeowners": ["@miabilabs"],
   "requirements": [],
   "dependencies": [],
   "version": "1.0.0",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
   "config_flow": true
 }
