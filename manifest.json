@@ -1,0 +1,9 @@
+{
+  "domain": "teamsnap",
+  "name": "TeamSnap",
+  "documentation": "https://github.com/miabilabs/ha-teamsnap",
+  "requirements": [],
+  "dependencies": [],
+  "version": "1.0.0",
+  "config_flow": true
+}
