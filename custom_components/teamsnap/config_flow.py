@@ -39,6 +39,12 @@ class TeamSnapOAuth2FlowHandler(
     @property
     def oauth_implementation(self) -> config_entry_oauth2_flow.AbstractOAuth2Implementation:
         """Return OAuth2 implementation."""
+        _LOGGER.debug(
+            "oauth_implementation property accessed - client_id set: %s, client_secret set: %s",
+            self._client_id is not None,
+            self._client_secret is not None
+        )
+        
         # Get credentials from instance variables
         if not self._client_id or not self._client_secret:
             # If credentials aren't set yet, return an error implementation
@@ -52,39 +58,70 @@ class TeamSnapOAuth2FlowHandler(
             return TeamSnapOAuth2ErrorImplementation(self.hass)
 
         # Create and return a valid implementation
-        _LOGGER.debug("Creating OAuth implementation with provided credentials")
-        return TeamSnapOAuth2Implementation(self.hass, self._client_id, self._client_secret)
+        _LOGGER.debug(
+            "Creating OAuth implementation with provided credentials (client_id length: %d)",
+            len(self._client_id)
+        )
+        try:
+            impl = TeamSnapOAuth2Implementation(self.hass, self._client_id, self._client_secret)
+            _LOGGER.debug("OAuth implementation created successfully")
+            return impl
+        except Exception as e:
+            _LOGGER.error("Failed to create OAuth implementation: %s", e, exc_info=True)
+            raise
 
     async def async_step_pick_implementation(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Override to collect credentials before showing OAuth implementation picker."""
+        _LOGGER.info(
+            "async_step_pick_implementation called - client_id set: %s, client_secret set: %s",
+            self._client_id is not None,
+            self._client_secret is not None
+        )
+        
         # If credentials aren't set, show the credentials form first
         if not self._client_id or not self._client_secret:
+            _LOGGER.info("Credentials not set, redirecting to user form")
             return await self.async_step_user(user_input)
         
         # Credentials are set, verify implementation is valid before proceeding
         try:
             impl = self.oauth_implementation
-            _LOGGER.debug("OAuth implementation validated, proceeding with flow")
+            _LOGGER.info("OAuth implementation validated, type: %s", type(impl).__name__)
+            
+            # Double-check it's not the error implementation
+            if isinstance(impl, TeamSnapOAuth2ErrorImplementation):
+                _LOGGER.error("ERROR: Got error implementation when credentials should be set!")
+                return await self.async_step_user(user_input)
         except Exception as impl_err:
             _LOGGER.error("OAuth implementation validation failed: %s", impl_err, exc_info=True)
             return await self.async_step_user(user_input)
         
         # Proceed with OAuth flow
         try:
-            return await super().async_step_pick_implementation(user_input)
+            _LOGGER.info("Calling parent's async_step_pick_implementation")
+            result = await super().async_step_pick_implementation(user_input)
+            _LOGGER.info("Parent's async_step_pick_implementation completed successfully")
+            return result
         except Exception as err:
             error_msg = str(err).lower()
-            _LOGGER.error("OAuth flow error in pick_implementation: %s", err, exc_info=True)
+            error_type = type(err).__name__
+            _LOGGER.error(
+                "OAuth flow error in pick_implementation: %s (type: %s)",
+                err,
+                error_type,
+                exc_info=True
+            )
             
             # Check if it's a missing_configuration error
             if "missing_configuration" in error_msg or "missing configuration" in error_msg:
                 _LOGGER.error(
-                    "OAuth configuration missing. This may indicate: "
-                    "1) Client ID/Secret are incorrect, "
-                    "2) Redirect URI mismatch, or "
-                    "3) OAuth app not properly configured in TeamSnap"
+                    "OAuth configuration missing. This error typically means Home Assistant "
+                    "cannot find a valid OAuth implementation. Verify: "
+                    "1) Client ID/Secret are correct, "
+                    "2) Redirect URI in TeamSnap matches the one shown in the form, "
+                    "3) OAuth app is properly configured in TeamSnap"
                 )
             
             return await self.async_step_user(user_input)
@@ -115,6 +152,12 @@ class TeamSnapOAuth2FlowHandler(
             client_id = user_input.get("client_id", "").strip()
             client_secret = user_input.get("client_secret", "").strip()
 
+            _LOGGER.info(
+                "User submitted credentials - client_id length: %d, client_secret length: %d",
+                len(client_id),
+                len(client_secret)
+            )
+
             if not client_id:
                 errors["client_id"] = "client_id_required"
             if not client_secret:
@@ -124,19 +167,26 @@ class TeamSnapOAuth2FlowHandler(
                 # Store credentials in instance variables for OAuth implementation
                 self._client_id = client_id
                 self._client_secret = client_secret
+                _LOGGER.info("Credentials stored in instance variables")
 
                 # Validate that we can create a valid implementation before proceeding
                 # This ensures the parent class will find a properly configured implementation
                 try:
                     impl = self.oauth_implementation
+                    _LOGGER.info("OAuth implementation created, type: %s", type(impl).__name__)
+                    
                     # Verify it's not the error implementation
                     if isinstance(impl, TeamSnapOAuth2ErrorImplementation):
+                        _LOGGER.error("ERROR: Got error implementation instead of valid implementation!")
                         raise ValueError("OAuth implementation is error implementation - credentials not set")
+                    
                     # Verify the implementation was created successfully
                     if not isinstance(impl, TeamSnapOAuth2Implementation):
+                        _LOGGER.error("ERROR: Unexpected implementation type: %s", type(impl))
                         raise ValueError(f"Unexpected implementation type: {type(impl)}")
-                    _LOGGER.debug(
-                        "OAuth implementation validated successfully, client_id: %s",
+                    
+                    _LOGGER.info(
+                        "OAuth implementation validated successfully, client_id prefix: %s",
                         client_id[:10] + "..." if len(client_id) > 10 else client_id
                     )
                 except Exception as impl_err:
@@ -152,26 +202,34 @@ class TeamSnapOAuth2FlowHandler(
                     # Implementation is valid, proceed with OAuth flow
                     # The parent class should now find a properly configured implementation
                     try:
-                        _LOGGER.debug("Proceeding with OAuth flow")
+                        _LOGGER.info("Proceeding with OAuth flow - calling super().async_step_pick_implementation()")
                         result = await super().async_step_pick_implementation()
-                        _LOGGER.debug("OAuth flow pick_implementation completed successfully")
+                        _LOGGER.info("OAuth flow pick_implementation completed successfully")
                         return result
                     except Exception as err:
                         error_str = str(err).lower()
-                        _LOGGER.error("OAuth flow error: %s", err, exc_info=True)
+                        error_type = type(err).__name__
+                        _LOGGER.error(
+                            "OAuth flow error in async_step_pick_implementation: %s (type: %s)",
+                            err,
+                            error_type,
+                            exc_info=True
+                        )
                         
                         # Check for specific error types
                         if "missing_configuration" in error_str or "missing configuration" in error_str:
                             error_base = "missing_configuration"
                             _LOGGER.error(
-                                "OAuth configuration missing. Verify: "
+                                "OAuth configuration missing. This error typically means Home Assistant "
+                                "cannot find a valid OAuth implementation. Verify: "
                                 "1) Client ID/Secret are correct, "
                                 "2) Redirect URI in TeamSnap matches: %s, "
-                                "3) OAuth app is properly configured",
+                                "3) OAuth app is properly configured in TeamSnap",
                                 redirect_uri
                             )
                         else:
                             error_base = "oauth_setup_error"
+                            _LOGGER.error("Unexpected OAuth error: %s", err)
                         
                         # Clear credentials so user can try again
                         self._client_id = None
