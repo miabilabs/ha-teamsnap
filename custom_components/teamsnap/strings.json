@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "TeamSnap OAuth Credentials",
-        "description": "Enter your TeamSnap OAuth application credentials.\n\n1. Register an OAuth app at https://auth.teamsnap.com\n2. Set the redirect URI to: {redirect_uri}\n3. Enter your Client ID and Client Secret below",
+        "description": "To connect Home Assistant to TeamSnap, you need to create an OAuth application first.\n\n**Step 1:** Go to [auth.teamsnap.com](https://auth.teamsnap.com) and sign in to your TeamSnap account.\n\n**Step 2:** Create a new OAuth application and set the redirect URI to:\n`{redirect_uri}`\n\n**Step 3:** Copy your Client ID and Client Secret from the TeamSnap OAuth application, then enter them below.",
         "data": {
           "client_id": "Client ID",
           "client_secret": "Client Secret"
@@ -17,7 +17,8 @@
     "error": {
       "client_id_required": "Client ID is required",
       "client_secret_required": "Client Secret is required",
-      "oauth_setup_error": "Unable to initialize OAuth flow. Please ensure your Client ID and Client Secret are correct and try again."
+      "oauth_setup_error": "Unable to initialize OAuth flow. Please ensure your Client ID and Client Secret are correct and try again.",
+      "missing_configuration": "OAuth configuration is missing. Please verify your Client ID and Client Secret are correct, and that the redirect URI in your TeamSnap OAuth app matches: {redirect_uri}"
     },
     "abort": {
       "already_configured": "TeamSnap is already configured",
