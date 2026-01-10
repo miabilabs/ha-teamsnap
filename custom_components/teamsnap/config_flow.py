@@ -41,11 +41,17 @@ class TeamSnapOAuth2FlowHandler(
         """Return OAuth2 implementation."""
         # Get credentials from instance variables
         if not self._client_id or not self._client_secret:
-            # This error will be caught and displayed as a user-friendly message
-            # in the config flow form
-            raise ValueError(
-                "OAuth credentials must be provided. Please enter your Client ID and Client Secret in the configuration form."
+            # If credentials aren't set yet, return an implementation that will
+            # fail with a clear error message when OAuth is actually attempted,
+            # rather than causing a 500 error when this property is accessed.
+            # This allows the flow to initialize and show the credentials form.
+            # The error will be caught in async_step_pick_implementation and
+            # the user will be redirected to enter credentials.
+            _LOGGER.debug(
+                "OAuth credentials not yet provided - returning error implementation. "
+                "User will be prompted to enter credentials."
             )
+            return TeamSnapOAuth2ErrorImplementation(self.hass)
 
         return TeamSnapOAuth2Implementation(self.hass, self._client_id, self._client_secret)
 
@@ -61,8 +67,9 @@ class TeamSnapOAuth2FlowHandler(
         # If oauth_implementation raises an error, catch it and show the form
         try:
             return await super().async_step_pick_implementation(user_input)
-        except ValueError as err:
+        except (ValueError, Exception) as err:
             # If credentials are invalid or missing, show the form with an error
+            # This catches errors from both the error implementation and actual OAuth failures
             _LOGGER.warning("OAuth implementation error: %s", err)
             return await self.async_step_user(user_input)
 
@@ -73,6 +80,8 @@ class TeamSnapOAuth2FlowHandler(
         if self._async_current_entries():
             return self.async_abort(reason="already_configured")
 
+        # Always show the credentials form first - don't call parent's async_step_user
+        # until credentials are provided
         errors: dict[str, str] = {}
         error_base: str | None = None
 
@@ -90,12 +99,12 @@ class TeamSnapOAuth2FlowHandler(
                 self._client_id = client_id
                 self._client_secret = client_secret
 
-                # Now proceed with OAuth flow
-                # The parent's async_step_user will call async_step_pick_implementation
-                # which will then use our oauth_implementation property
+                # Now proceed with OAuth flow by calling pick_implementation directly
+                # This avoids the parent's async_step_user which might access oauth_implementation
+                # before credentials are set
                 try:
-                    return await super().async_step_user()
-                except ValueError as err:
+                    return await super().async_step_pick_implementation()
+                except Exception as err:
                     # If there's an error with the OAuth implementation, show it to the user
                     _LOGGER.error("OAuth flow error: %s", err)
                     error_base = "oauth_setup_error"
@@ -150,3 +159,28 @@ class TeamSnapOAuth2Implementation(
         """Resolve external data to tokens."""
         # This is called after the OAuth flow completes
         return external_data
+
+
+class TeamSnapOAuth2ErrorImplementation(
+    config_entry_oauth2_flow.LocalOAuth2Implementation,
+):
+    """Error implementation that fails with a clear message when OAuth is attempted."""
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        """Initialize error implementation."""
+        # Use placeholder values that will cause OAuth to fail with a clear error
+        super().__init__(
+            hass,
+            DOMAIN,
+            "",  # Empty client_id will cause OAuth to fail
+            "",  # Empty client_secret will cause OAuth to fail
+            OAUTH2_AUTHORIZE_URL,
+            OAUTH2_TOKEN_URL,
+        )
+
+    async def async_generate_authorize_url(self, flow_id: str) -> str:
+        """Generate authorize URL - will raise error with clear message."""
+        raise ValueError(
+            "OAuth credentials must be provided. Please enter your Client ID and Client Secret "
+            "in the configuration form before proceeding with OAuth authentication."
+        )
