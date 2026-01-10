@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "TeamSnap OAuth Credentials",
+        "description": "Enter your TeamSnap OAuth application credentials.\n\n1. Register an OAuth app at https://auth.teamsnap.com\n2. Set the redirect URI to: {redirect_uri}\n3. Enter your Client ID and Client Secret below",
+        "data": {
+          "client_id": "Client ID",
+          "client_secret": "Client Secret"
+        }
+      },
+      "pick_implementation": {
+        "title": "Pick Authentication Method",
+        "description": "Please pick how you want to authenticate with TeamSnap."
+      }
+    },
+    "error": {
+      "client_id_required": "Client ID is required",
+      "client_secret_required": "Client Secret is required"
+    },
+    "abort": {
+      "already_configured": "TeamSnap is already configured",
+      "cannot_connect": "Unable to connect to TeamSnap",
+      "invalid_auth": "Invalid authentication",
+      "no_devices_found": "No TeamSnap teams found",
+      "unknown": "Unexpected error"
+    },
+    "create_entry": {
+      "default": "Successfully authenticated with TeamSnap"
+    }
+  }
+}
