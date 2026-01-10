@@ -114,7 +114,13 @@ class TeamSnapOAuth2FlowHandler(
 
         # Get the redirect URI that Home Assistant will use for OAuth
         # Format: https://<home-assistant-url>/auth/external/callback
-        redirect_uri = f"{self.hass.config.api.base_url}/auth/external/callback"
+        # Use external_url if available, otherwise fall back to internal_url
+        base_url = self.hass.config.external_url or self.hass.config.internal_url
+        if base_url:
+            redirect_uri = f"{base_url}/auth/external/callback"
+        else:
+            # Fallback: show placeholder if URLs aren't configured
+            redirect_uri = "https://YOUR_HOME_ASSISTANT_URL/auth/external/callback"
 
         return self.async_show_form(
             step_id="user",
