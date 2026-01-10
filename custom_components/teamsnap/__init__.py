@@ -32,27 +32,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     # Get the access token from the OAuth2 implementation
     # The token is stored in the config entry data after OAuth flow
+    access_token: str | None = None
     try:
         # Try to get token from implementation
         token = await implementation.async_resolve_token({})
         access_token = token.get("access_token")
-        
-        # Fallback to entry data if implementation doesn't return token
-        if not access_token and "token" in entry.data:
-            access_token = entry.data["token"].get("access_token")
-            
-        if not access_token:
-            _LOGGER.error("No access token available in config entry")
-            return False
     except Exception as err:
-        _LOGGER.error("Failed to resolve access token: %s", err)
-        # Try fallback to entry data
-        if "token" in entry.data:
-            access_token = entry.data["token"].get("access_token")
-            if not access_token:
-                return False
-        else:
-            return False
+        _LOGGER.debug("Failed to resolve token from implementation: %s", err)
+    
+    # Fallback to entry data if implementation doesn't return token
+    if not access_token and "token" in entry.data:
+        access_token = entry.data["token"].get("access_token")
+            
+    if not access_token:
+        _LOGGER.error("No access token available in config entry")
+        return False
 
     api_client = TeamSnapAPIClient(session, access_token)
 
@@ -62,9 +56,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         await coordinator.async_config_entry_first_refresh()
     except Exception as err:
-        _LOGGER.error("Failed to fetch initial data from TeamSnap: %s", err)
+        _LOGGER.warning(
+            "Failed to fetch initial data from TeamSnap: %s. "
+            "The integration will continue to retry.",
+            err
+        )
         # Don't fail setup if initial fetch fails - coordinator will retry
-        pass
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
