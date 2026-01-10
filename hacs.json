@@ -7,5 +7,5 @@
   "homeassistant": "2024.1.0",
   "iot_class": "cloud_polling",
   "render_readme": true,
-  "icon": "icon.png"
+  "icon": "https://raw.githubusercontent.com/miabilabs/ha-teamsnap/main/icon.png"
 }
