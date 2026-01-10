@@ -1,6 +1,6 @@
 # ha-teamsnap
 
-![TeamSnap Logo](logo.png)
+![TeamSnap Logo](icon.png)
 
 Home Assistant Integration for TeamSnap
 
