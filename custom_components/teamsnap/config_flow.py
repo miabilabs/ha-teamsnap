@@ -25,6 +25,12 @@ class TeamSnapOAuth2FlowHandler(
     DOMAIN = DOMAIN
     VERSION = 1
 
+    def __init__(self) -> None:
+        """Initialize the config flow."""
+        super().__init__()
+        self._client_id: str | None = None
+        self._client_secret: str | None = None
+
     @property
     def logger(self) -> logging.Logger:
         """Return logger."""
@@ -33,20 +39,32 @@ class TeamSnapOAuth2FlowHandler(
     @property
     def oauth_implementation(self) -> config_entry_oauth2_flow.AbstractOAuth2Implementation:
         """Return OAuth2 implementation."""
-        # Get credentials from flow data (set in async_step_user)
-        client_id = self.hass.data.get(f"{DOMAIN}_flow_client_id")
-        client_secret = self.hass.data.get(f"{DOMAIN}_flow_client_secret")
-
-        if not client_id or not client_secret:
-            # Return a placeholder - this will be set before OAuth flow starts
-            # In practice, credentials should be set in async_step_user before
-            # calling super().async_step_user()
+        # Get credentials from instance variables
+        if not self._client_id or not self._client_secret:
+            # This error will be caught and displayed as a user-friendly message
+            # in the config flow form
             raise ValueError(
-                "Client ID and secret must be provided. "
-                "Please register an OAuth app at https://auth.teamsnap.com"
+                "OAuth credentials must be provided. Please enter your Client ID and Client Secret in the configuration form."
             )
 
-        return TeamSnapOAuth2Implementation(self.hass, client_id, client_secret)
+        return TeamSnapOAuth2Implementation(self.hass, self._client_id, self._client_secret)
+
+    async def async_step_pick_implementation(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Override to collect credentials before showing OAuth implementation picker."""
+        # If credentials aren't set, show the credentials form first
+        if not self._client_id or not self._client_secret:
+            return await self.async_step_user(user_input)
+        
+        # Credentials are set, try to proceed with OAuth flow
+        # If oauth_implementation raises an error, catch it and show the form
+        try:
+            return await super().async_step_pick_implementation(user_input)
+        except ValueError as err:
+            # If credentials are invalid or missing, show the form with an error
+            _LOGGER.warning("OAuth implementation error: %s", err)
+            return await self.async_step_user(user_input)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -56,6 +74,7 @@ class TeamSnapOAuth2FlowHandler(
             return self.async_abort(reason="already_configured")
 
         errors: dict[str, str] = {}
+        error_base: str | None = None
 
         if user_input is not None:
             client_id = user_input.get("client_id", "").strip()
@@ -67,17 +86,22 @@ class TeamSnapOAuth2FlowHandler(
                 errors["client_secret"] = "client_secret_required"
 
             if not errors:
-                # Store credentials temporarily for OAuth implementation
-                self.hass.data[f"{DOMAIN}_flow_client_id"] = client_id
-                self.hass.data[f"{DOMAIN}_flow_client_secret"] = client_secret
+                # Store credentials in instance variables for OAuth implementation
+                self._client_id = client_id
+                self._client_secret = client_secret
 
+                # Now proceed with OAuth flow
+                # The parent's async_step_user will call async_step_pick_implementation
+                # which will then use our oauth_implementation property
                 try:
-                    # Now proceed with OAuth flow
                     return await super().async_step_user()
-                finally:
-                    # Clean up temporary credentials after flow completes
-                    self.hass.data.pop(f"{DOMAIN}_flow_client_id", None)
-                    self.hass.data.pop(f"{DOMAIN}_flow_client_secret", None)
+                except ValueError as err:
+                    # If there's an error with the OAuth implementation, show it to the user
+                    _LOGGER.error("OAuth flow error: %s", err)
+                    error_base = "oauth_setup_error"
+                    # Clear credentials so user can try again
+                    self._client_id = None
+                    self._client_secret = None
 
         # Get the redirect URI that Home Assistant will use for OAuth
         # Format: https://<home-assistant-url>/auth/external/callback
@@ -95,7 +119,7 @@ class TeamSnapOAuth2FlowHandler(
                 "docs_url": "https://www.teamsnap.com/documentation/apiv3/authorization",
                 "redirect_uri": redirect_uri,
             },
-            errors=errors,
+            errors=errors if not error_base else {"base": error_base},
         )
 
 

@@ -16,7 +16,8 @@
     },
     "error": {
       "client_id_required": "Client ID is required",
-      "client_secret_required": "Client Secret is required"
+      "client_secret_required": "Client Secret is required",
+      "oauth_setup_error": "Unable to initialize OAuth flow. Please ensure your Client ID and Client Secret are correct and try again."
     },
     "abort": {
       "already_configured": "TeamSnap is already configured",
