@@ -119,8 +119,20 @@ If using HACS, verify the integration files are properly loaded:
    - Should see: `__init__.py`, `config_flow.py`, `manifest.json`, `strings.json`, etc.
 
 2. **Check for Import Errors**:
-   - Look in logs for any `ImportError` or `ModuleNotFoundError` related to `teamsnap`
-   - These would indicate the integration isn't being loaded properly
+   - **Where to check**: Go to **Settings** → **System** → **Logs** (or check `/config/home-assistant.log` via SSH)
+   - **What to search for**: Look for errors containing:
+     - `ImportError`
+     - `ModuleNotFoundError`
+     - `AttributeError`
+     - `SyntaxError`
+     - `Unable to import integration: teamsnap`
+     - `Setup failed for teamsnap`
+   - **Example error messages**:
+     ```
+     ERROR (MainThread) [homeassistant.loader] Unable to import integration teamsnap: No module named 'custom_components.teamsnap'
+     ERROR (MainThread) [homeassistant.setup] Setup failed for teamsnap: Integration failed to initialize
+     ```
+   - These errors indicate the integration isn't being loaded properly
 
 3. **Clear All Caches**:
    ```bash
@@ -130,17 +142,37 @@ If using HACS, verify the integration files are properly loaded:
    # Then restart Home Assistant
    ```
 
-### Step 7: Review Log Output
+### Step 7: Understand What Should Happen After Submitting Credentials
 
-When you see the "missing_configuration" error, look for these log entries:
+When you enter your Client ID and Client Secret and click Submit, here's the expected flow:
 
-- `"User submitted credentials"` - Confirms credentials were received
-- `"Credentials stored in instance variables"` - Confirms credentials were stored
-- `"OAuth implementation created"` - Confirms implementation was created
-- `"OAuth flow error"` - Shows the actual error
-- Any `ImportError` or `ModuleNotFoundError` - Indicates file loading issues
+1. **Form Submission** → `async_step_user()` is called with your credentials
+2. **Application Credentials** → Credentials are stored via Home Assistant's Application Credentials system
+3. **Parent Class Called** → `super().async_step_pick_implementation()` is called
+4. **OAuth URL Generated** → Parent class generates the OAuth authorization URL using Application Credentials
+5. **Redirect to TeamSnap** → You should be redirected to TeamSnap to authorize
 
-The logs will help identify where the flow is failing.
+### Step 8: Review Log Output
+
+When you see the "missing_configuration" error, look for these log entries (in order):
+
+**Expected Log Messages:**
+```
+=== async_step_user called ===
+=== USER SUBMITTED FORM ===
+User submitted credentials - client_id length: X, client_secret length: Y
+Credentials stored via Application Credentials
+=== PROCEEDING WITH OAUTH FLOW ===
+About to call super().async_step_pick_implementation()
+=== CALLING PARENT'S async_step_pick_implementation ===
+```
+
+**What These Logs Tell You:**
+- If you see **none of these logs** → The integration might not be loading properly (check for import errors)
+- If you see logs up to `"CALLING PARENT'S async_step_pick_implementation"` but then get the error → The parent class is not finding our implementation
+- If you see `ImportError` or `ModuleNotFoundError` → The integration files aren't being loaded correctly
+
+The logs will help identify exactly where the flow is failing.
 
 ## HACS Installation Specific Issues
 
@@ -183,6 +215,15 @@ When updating via HACS:
 6. Clear Python cache: `rm -rf /config/custom_components/teamsnap/__pycache__`
 7. Restart again if needed
 
+## Understanding the "missing_configuration" Error
+
+This error typically occurs when Home Assistant's OAuth2 framework (`AbstractOAuth2FlowHandler`) cannot find a valid OAuth implementation via Application Credentials. This can happen if:
+
+1. **Application Credentials not configured** - The Client ID and Client Secret need to be configured in Home Assistant's Application Credentials system
+2. **The implementation isn't properly registered** - There might be an error during Application Credentials registration
+3. **Python cache is stale** - Old bytecode might be preventing the new code from loading (especially with HACS installations)
+4. **OAuth URLs mismatch** - The redirect URI in your TeamSnap OAuth app doesn't match Home Assistant's expected redirect URI
+
 ## Still Having Issues?
 
 If you're still experiencing issues after following these steps:
@@ -190,11 +231,13 @@ If you're still experiencing issues after following these steps:
 1. **Collect logs** with debug logging enabled (see Step 1)
 2. **Verify installation** (check files are in correct location)
 3. **Clear Python cache** (especially after HACS updates)
-4. **Take a screenshot** of the error message
-5. **Note your Home Assistant version** (Settings → System → Information)
-6. **Note your HACS version** (if using HACS)
-7. **Check the GitHub Issues** at [https://github.com/miabilabs/ha-teamsnap/issues](https://github.com/miabilabs/ha-teamsnap/issues)
-8. **Create a new issue** with the collected information
+4. **Check for import errors** (see Step 6)
+5. **Review expected log messages** (see Step 8) to identify where the flow is failing
+6. **Take a screenshot** of the error message
+7. **Note your Home Assistant version** (Settings → System → Information)
+8. **Note your HACS version** (if using HACS)
+9. **Check the GitHub Issues** at [https://github.com/miabilabs/ha-teamsnap/issues](https://github.com/miabilabs/ha-teamsnap/issues)
+10. **Create a new issue** with the collected information
 
 ## Common Error Messages
 

@@ -2,12 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "TeamSnap OAuth Credentials",
-        "description": "To connect Home Assistant to TeamSnap, you need to create an OAuth application first.\n\n**Step 1:** Go to [auth.teamsnap.com](https://auth.teamsnap.com) and sign in to your TeamSnap account.\n\n**Step 2:** Create a new OAuth application and set the redirect URI to:\n`{redirect_uri}`\n\n**Step 3:** Copy your Client ID and Client Secret from the TeamSnap OAuth application, then enter them below.",
-        "data": {
-          "client_id": "Client ID",
-          "client_secret": "Client Secret"
-        }
+        "title": "TeamSnap",
+        "description": "To connect Home Assistant to TeamSnap, you need to configure Application Credentials first.\n\n**Step 1:** Go to **Settings** → **Application Credentials** → **Add Application** → **TeamSnap**\n\n**Step 2:** Enter your Client ID and Client Secret from your TeamSnap OAuth application\n\n**Step 3:** Set the redirect URI in your TeamSnap OAuth app to:\n`{redirect_uri}`\n\n**Step 4:** Click Submit below to continue with OAuth authentication."
       },
       "pick_implementation": {
         "title": "Pick Authentication Method",
@@ -15,10 +11,8 @@
       }
     },
     "error": {
-      "client_id_required": "Client ID is required",
-      "client_secret_required": "Client Secret is required",
-      "oauth_setup_error": "Unable to initialize OAuth flow. Please ensure your Client ID and Client Secret are correct and try again.",
-      "missing_configuration": "OAuth configuration is missing. Please verify your Client ID and Client Secret are correct, and that the redirect URI in your TeamSnap OAuth app matches: {redirect_uri}"
+      "oauth_setup_error": "Unable to initialize OAuth flow. Please ensure Application Credentials are configured correctly.",
+      "missing_configuration": "OAuth configuration is missing. Please configure Application Credentials first (Settings → Application Credentials), and verify that the redirect URI in your TeamSnap OAuth app matches: {redirect_uri}"
     },
     "abort": {
       "already_configured": "TeamSnap is already configured",

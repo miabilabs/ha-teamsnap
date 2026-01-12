@@ -5,9 +5,9 @@
   "issue_tracker": "https://github.com/miabilabs/ha-teamsnap/issues",
   "codeowners": ["@miabilabs"],
   "requirements": ["aiohttp>=3.8.0"],
-  "dependencies": [],
+  "dependencies": ["application_credentials"],
   "version": "0.5.1",
-  "integration_type": "service",
+  "integration_type": "hub",
   "iot_class": "cloud_polling",
   "config_flow": true
 }
