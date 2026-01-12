@@ -9,7 +9,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_entry_oauth2_flow
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import TeamSnapAPIClient
 from .const import DOMAIN
@@ -28,27 +27,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
     )
 
-    session = async_get_clientsession(hass)
-    
-    # Get the access token from the OAuth2 implementation
-    # The token is stored in the config entry data after OAuth flow
-    access_token: str | None = None
-    try:
-        # Try to get token from implementation
-        token = await implementation.async_resolve_token({})
-        access_token = token.get("access_token")
-    except Exception as err:
-        _LOGGER.debug("Failed to resolve token from implementation: %s", err)
-    
-    # Fallback to entry data if implementation doesn't return token
-    if not access_token and "token" in entry.data:
-        access_token = entry.data["token"].get("access_token")
-            
-    if not access_token:
-        _LOGGER.error("No access token available in config entry")
-        return False
+    oauth_session = config_entry_oauth2_flow.OAuth2Session(hass, entry, implementation)
 
-    api_client = TeamSnapAPIClient(session, access_token)
+    api_client = TeamSnapAPIClient(oauth_session)
 
     coordinator = TeamSnapDataUpdateCoordinator(hass, api_client)
 
