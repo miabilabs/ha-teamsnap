@@ -6,7 +6,7 @@
   "codeowners": ["@miabilabs"],
   "requirements": ["aiohttp>=3.8.0"],
   "dependencies": ["application_credentials"],
-  "version": "0.5.1",
+  "version": "0.5.2",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "config_flow": true

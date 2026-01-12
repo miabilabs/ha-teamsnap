@@ -1,18 +1,14 @@
 """Application Credentials for TeamSnap."""
 
-from homeassistant.helpers import application_credentials as app_creds
+from homeassistant.core import HomeAssistant
+from homeassistant.components.application_credentials import AuthorizationServer
 
-from .const import DOMAIN, OAUTH2_AUTHORIZE_URL, OAUTH2_TOKEN_URL
+from .const import OAUTH2_AUTHORIZE_URL, OAUTH2_TOKEN_URL
 
 
-class TeamSnapApplicationCredentials(app_creds.AuthorizationServer):
-    """TeamSnap OAuth authorization server."""
-
-    def __init__(self, hass):
-        super().__init__(
-            hass,
-            DOMAIN,
-            "TeamSnap",
-            OAUTH2_AUTHORIZE_URL,
-            OAUTH2_TOKEN_URL,
-        )
+async def async_get_authorization_server(hass: HomeAssistant) -> AuthorizationServer:
+    """Return authorization server."""
+    return AuthorizationServer(
+        authorize_url=OAUTH2_AUTHORIZE_URL,
+        token_url=OAUTH2_TOKEN_URL,
+    )
