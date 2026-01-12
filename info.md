@@ -18,8 +18,9 @@ Install this integration through [HACS](https://hacs.xyz/) or manually by copyin
 
 1. Register an OAuth application at [https://auth.teamsnap.com](https://auth.teamsnap.com)
 2. Set the redirect URI to: `https://YOUR_HOME_ASSISTANT_URL/auth/external/callback`
-3. Add the integration in Home Assistant through Settings → Devices & Services
-4. Enter your OAuth Client ID and Client Secret
-5. Complete the OAuth authorization flow
+3. Configure Application Credentials: Go to **Settings** → **Application Credentials** → **Add Application** → **TeamSnap**
+4. Enter your OAuth Client ID and Client Secret in Application Credentials
+5. Add the integration in Home Assistant through **Settings** → **Devices & Services**
+6. Complete the OAuth authorization flow
 
 For detailed setup instructions, see the [README](README.md).

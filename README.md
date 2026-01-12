@@ -32,14 +32,21 @@ Install this integration through [HACS](https://hacs.xyz/) (Home Assistant Commu
 
 4. Save your **Client ID** and **Client Secret** - you'll need these in the next step
 
-### Step 2: Add the Integration in Home Assistant
+### Step 2: Configure Application Credentials
+
+1. Go to **Settings** → **Application Credentials**
+2. Click **Add Application**
+3. Select **TeamSnap** from the list
+4. Enter your **Client ID** and **Client Secret** from Step 1
+5. Click **Submit** to save
+
+### Step 3: Add the Integration in Home Assistant
 
 1. Go to **Settings** → **Devices & Services**
 2. Click **Add Integration**
 3. Search for **TeamSnap** and select it
-4. Enter your **Client ID** and **Client Secret** from Step 1
-5. Complete the OAuth authorization flow
-6. Your TeamSnap integration is now configured!
+4. Complete the OAuth authorization flow (you'll be redirected to TeamSnap to authorize)
+5. Your TeamSnap integration is now configured!
 
 ## What This Integration Does
 
