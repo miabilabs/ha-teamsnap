@@ -4,7 +4,6 @@
   "documentation": "https://github.com/miabilabs/ha-teamsnap",
   "issue_tracker": "https://github.com/miabilabs/ha-teamsnap/issues",
   "codeowners": ["@miabilabs"],
-  "requirements": ["aiohttp>=3.8.0"],
   "dependencies": ["application_credentials"],
   "version": "0.5.2",
   "integration_type": "hub",

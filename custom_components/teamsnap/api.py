@@ -48,6 +48,15 @@ class TeamSnapAPIClient:
                 _LOGGER.warning("Unauthorized - token may need refresh")
                 raise TeamSnapAPIError("Authentication failed - token may be expired")
 
+            if response.status >= 400:
+                try:
+                    body = await response.text()
+                except Exception:
+                    body = "Unable to read error response"
+                raise TeamSnapAPIError(
+                    f"API request failed ({response.status}): {body}"
+                )
+
             try:
                 data = await response.json()
             except Exception:

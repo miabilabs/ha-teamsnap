@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import logging
 from typing import Any
 
 from homeassistant.components.sensor import (
     SensorEntity,
     SensorEntityDescription,
+    SensorDeviceClass,
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
@@ -37,6 +40,7 @@ SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
         key="next_game",
         name="Next Game",
         icon="mdi:soccer",
+        device_class=SensorDeviceClass.TIMESTAMP,
     ),
     SensorEntityDescription(
         key="upcoming_events_count",
@@ -49,6 +53,7 @@ SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
         key="next_practice",
         name="Next Practice",
         icon="mdi:whistle",
+        device_class=SensorDeviceClass.TIMESTAMP,
     ),
 )
 
@@ -84,7 +89,7 @@ class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEnt
         self._attr_name = f"TeamSnap {description.name}"
 
     @property
-    def native_value(self) -> str | int | None:
+    def native_value(self) -> datetime | int | None:
         """Return the state of the sensor."""
         data = self.coordinator.data
         if not data:
@@ -100,7 +105,7 @@ class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEnt
                     try:
                         dt = dt_util.parse_datetime(start_date)
                         if dt:
-                            return dt.strftime("%Y-%m-%d %H:%M")
+                            return dt_util.as_local(dt)
                     except (ValueError, TypeError):
                         pass
             return None
@@ -116,7 +121,7 @@ class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEnt
                     try:
                         dt = dt_util.parse_datetime(start_date)
                         if dt:
-                            return dt.strftime("%Y-%m-%d %H:%M")
+                            return dt_util.as_local(dt)
                     except (ValueError, TypeError):
                         pass
             return None
