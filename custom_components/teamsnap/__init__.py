@@ -21,17 +21,23 @@ PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up TeamSnap from a config entry."""
-    implementation = (
-        await config_entry_oauth2_flow.async_get_config_entry_implementation(
-            hass, entry
+    try:
+        implementation = (
+            await config_entry_oauth2_flow.async_get_config_entry_implementation(
+                hass, entry
+            )
         )
-    )
+    except Exception as err:
+        _LOGGER.error("Failed to get OAuth2 implementation: %s", err)
+        return False
 
-    oauth_session = config_entry_oauth2_flow.OAuth2Session(hass, entry, implementation)
-
-    api_client = TeamSnapAPIClient(oauth_session)
-
-    coordinator = TeamSnapDataUpdateCoordinator(hass, api_client)
+    try:
+        oauth_session = config_entry_oauth2_flow.OAuth2Session(hass, entry, implementation)
+        api_client = TeamSnapAPIClient(oauth_session)
+        coordinator = TeamSnapDataUpdateCoordinator(hass, api_client)
+    except Exception as err:
+        _LOGGER.error("Failed to initialize TeamSnap client: %s", err)
+        return False
 
     # Fetch initial data so we have data when entities are added
     try:
