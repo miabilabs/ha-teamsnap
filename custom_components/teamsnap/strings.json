@@ -4,10 +4,6 @@
       "user": {
         "title": "TeamSnap",
         "description": "To connect Home Assistant to TeamSnap, you need to configure Application Credentials first.\n\n**Step 1:** Go to **Settings** → **Application Credentials** → **Add Application** → **TeamSnap**\n\n**Step 2:** Enter your Client ID and Client Secret from your TeamSnap OAuth application\n\n**Step 3:** Set the redirect URI in your TeamSnap OAuth app to:\n`{redirect_uri}`\n\n**Step 4:** Click Submit below to continue with OAuth authentication."
-      },
-      "pick_implementation": {
-        "title": "Pick Authentication Method",
-        "description": "Please pick how you want to authenticate with TeamSnap."
       }
     },
     "error": {
