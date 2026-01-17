@@ -64,6 +64,14 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up TeamSnap sensor entities."""
+    if DOMAIN not in hass.data:
+        _LOGGER.error("TeamSnap domain not found in hass.data")
+        return
+
+    if entry.entry_id not in hass.data[DOMAIN]:
+        _LOGGER.error("TeamSnap coordinator not found for entry %s", entry.entry_id)
+        return
+
     coordinator: TeamSnapDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
 
     entities = [
@@ -85,7 +93,10 @@ class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEnt
         """Initialize the sensor."""
         super().__init__(coordinator)
         self.entity_description = description
-        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{description.key}"
+
+        # Generate unique ID safely
+        entry_id = getattr(coordinator.config_entry, 'entry_id', 'unknown') if coordinator.config_entry else 'unknown'
+        self._attr_unique_id = f"{entry_id}_{description.key}"
         self._attr_name = f"TeamSnap {description.name}"
 
     @property
@@ -165,15 +176,20 @@ class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEnt
         if teams:
             # Use the first team or the team from next_game/next_practice
             team_id = attrs.get(ATTR_TEAM_ID)
-            if team_id:
-                team = next(
-                    (t for t in teams if t.get("id") == team_id),
-                    teams[0] if teams else None,
-                )
-            else:
-                team = teams[0] if teams else None
+            team = None
 
-            if team:
+            if team_id:
+                # Find team by ID
+                team = next(
+                    (t for t in teams if t and t.get("id") == team_id),
+                    None,
+                )
+
+            # Fallback to first team if no specific team found
+            if not team and teams:
+                team = teams[0]
+
+            if team and isinstance(team, dict):
                 attrs[ATTR_TEAM_NAME] = team.get("name", "Unknown")
 
         attrs[ATTR_UPCOMING_EVENTS] = data.get("upcoming_events_count", 0)
