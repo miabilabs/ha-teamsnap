@@ -13,8 +13,6 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-_LOGGER = logging.getLogger(__name__)
-
 
 class TeamSnapConfigFlow(
     config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMAIN
@@ -22,6 +20,11 @@ class TeamSnapConfigFlow(
     """Handle a config flow for TeamSnap."""
 
     VERSION = 1
+
+    @property
+    def logger(self) -> logging.Logger:
+        """Return logger."""
+        return _LOGGER
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Handle the initial step."""
@@ -33,10 +36,5 @@ class TeamSnapConfigFlow(
 
     async def async_oauth_create_entry(self, data: dict[str, Any]) -> FlowResult:
         """Create the config entry after successful OAuth."""
-        try:
-            user_info = await self.async_oauth_create_entry_data(data)
-            _LOGGER.debug("OAuth flow completed, creating entry with user info: %s", user_info)
-            return self.async_create_entry(title="TeamSnap", data=data)
-        except Exception as err:
-            _LOGGER.error("Failed to create OAuth entry: %s", err)
-            return self.async_abort(reason="oauth_error")
+        _LOGGER.debug("OAuth flow completed")
+        return self.async_create_entry(title="TeamSnap", data=data)
