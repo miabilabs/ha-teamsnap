@@ -16,21 +16,28 @@ Install this integration through [HACS](https://hacs.xyz/) (Home Assistant Commu
 
 1. Go to [https://auth.teamsnap.com](https://auth.teamsnap.com) and sign in
 2. Create a new OAuth application
-3. **Important:** Set the redirect URI to:
+3. **Important:** Set the redirect URI in your TeamSnap OAuth app. The value must **exactly** match what Home Assistant uses, or you will get an "authorization error" after signing in on TeamSnap.
+
+   **If you use Home Assistant Cloud (Nabu Casa)** — use this redirect URI:
+   ```
+   https://my.home-assistant.io/redirect/oauth
+   ```
+
+   **If you do not use Home Assistant Cloud** — use your Home Assistant URL plus the callback path:
    ```
    https://YOUR_HOME_ASSISTANT_URL/auth/external/callback
    ```
-   
-   Replace `YOUR_HOME_ASSISTANT_URL` with your actual Home Assistant URL:
-   - For local access: `homeassistant.local:8123` or `192.168.1.100:8123`
-   - For remote access: `yourdomain.duckdns.org` or your custom domain
-   
-   **Example redirect URIs:**
+   Replace `YOUR_HOME_ASSISTANT_URL` with your actual Home Assistant URL (include port if not 443), for example:
+   - `homeassistant.local:8123`
+   - `192.168.1.100:8123`
+   - `yourdomain.duckdns.org:8123`
+
+   **Examples (no Cloud):**
    - `https://homeassistant.local:8123/auth/external/callback`
    - `https://192.168.1.100:8123/auth/external/callback`
-   - `https://yourdomain.duckdns.org/auth/external/callback`
+   - `https://yourdomain.duckdns.org:8123/auth/external/callback`
 
-4. Save your **Client ID** and **Client Secret** - you'll need these in the next step
+4. Save your **Client ID** and **Client Secret** — you'll need these in the next step
 
 ### Step 2: Configure Application Credentials
 
@@ -45,8 +52,10 @@ Install this integration through [HACS](https://hacs.xyz/) (Home Assistant Commu
 1. Go to **Settings** → **Devices & Services**
 2. Click **Add Integration**
 3. Search for **TeamSnap** and select it
-4. Complete the OAuth authorization flow (you'll be redirected to TeamSnap to authorize)
-5. Your TeamSnap integration is now configured!
+4. When prompted, continue to the external site — you'll be redirected to **auth.teamsnap.com** to sign in and authorize Home Assistant
+5. After authorizing, you'll be sent back to Home Assistant and the integration will finish setting up
+
+**Troubleshooting:** If you see an "authorization error" on TeamSnap after entering your credentials, the redirect URI in your TeamSnap OAuth app (Step 1) does not match. Use **Home Assistant Cloud** URI if you use Nabu Casa, or your **exact** Home Assistant URL with `/auth/external/callback` if you do not.
 
 ## What This Integration Does
 
