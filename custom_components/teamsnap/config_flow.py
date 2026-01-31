@@ -19,6 +19,7 @@ class TeamSnapConfigFlow(
 ):
     """Handle a config flow for TeamSnap."""
 
+    DOMAIN = DOMAIN
     VERSION = 1
 
     @property
