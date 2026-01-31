@@ -82,6 +82,10 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.exception("Unexpected error fetching TeamSnap data: %s", err)
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
+    def _event_start_value(self, event: dict[str, Any]) -> str | None:
+        """Get start date/time from event (TeamSnap uses start_date or starts_at)."""
+        return event.get("start_date") or event.get("starts_at")
+
     def _get_next_game(
         self, events_by_team: dict[int, list[dict[str, Any]]]
     ) -> dict[str, Any] | None:
@@ -92,11 +96,13 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         for team_id, events in events_by_team.items():
             for event in events:
-                event_type = event.get("event_type", "").lower()
+                event_type = (
+                    event.get("type") or event.get("event_type") or ""
+                ).lower()
                 if "game" not in event_type and "match" not in event_type:
                     continue
 
-                start_date = event.get("start_date")
+                start_date = self._event_start_value(event)
                 if not start_date:
                     continue
 
@@ -124,11 +130,13 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         for team_id, events in events_by_team.items():
             for event in events:
-                event_type = event.get("event_type", "").lower()
+                event_type = (
+                    event.get("type") or event.get("event_type") or ""
+                ).lower()
                 if "practice" not in event_type:
                     continue
 
-                start_date = event.get("start_date")
+                start_date = self._event_start_value(event)
                 if not start_date:
                     continue
 
@@ -155,7 +163,7 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         for events in events_by_team.values():
             for event in events:
-                start_date = event.get("start_date")
+                start_date = self._event_start_value(event)
                 if not start_date:
                     continue
 

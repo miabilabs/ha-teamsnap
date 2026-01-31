@@ -35,6 +35,10 @@ from .coordinator import TeamSnapDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+# Max number of upcoming games/practices to list per team (keeps attributes manageable)
+MAX_UPCOMING_GAMES = 20
+MAX_UPCOMING_PRACTICES = 20
+
 SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(
         key="next_game",
@@ -58,6 +62,119 @@ SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
 )
 
 
+def _event_start_value(event: dict[str, Any]) -> str | None:
+    """Get start date/time from event."""
+    return event.get("start_date") or event.get("starts_at")
+
+
+def _format_upcoming_game(event: dict[str, Any]) -> str:
+    """Format a game event as a readable string."""
+    start = _event_start_value(event)
+    dt_str = ""
+    if start:
+        try:
+            dt = dt_util.parse_datetime(start)
+            if dt:
+                local = dt_util.as_local(dt)
+                dt_str = local.strftime("%b %d, %Y %I:%M %p")
+        except (ValueError, TypeError):
+            dt_str = start
+    opponent = event.get("opponent_name") or event.get("opponent") or "TBD"
+    location = event.get("location_name") or event.get("location") or "TBD"
+    return f"{dt_str} - vs {opponent} @ {location}".strip(" -")
+
+
+def _format_upcoming_practice(event: dict[str, Any]) -> str:
+    """Format a practice event as a readable string."""
+    start = _event_start_value(event)
+    dt_str = ""
+    if start:
+        try:
+            dt = dt_util.parse_datetime(start)
+            if dt:
+                local = dt_util.as_local(dt)
+                dt_str = local.strftime("%b %d, %Y %I:%M %p")
+        except (ValueError, TypeError):
+            dt_str = start
+    location = event.get("location_name") or event.get("location") or "TBD"
+    name = event.get("name") or "Practice"
+    return f"{dt_str} - {name} @ {location}".strip(" -")
+
+
+def _build_team_upcoming_lists(
+    events: list[dict[str, Any]],
+) -> tuple[list[str], list[str], str | None, str | None]:
+    """Build lists of upcoming games and practices, plus next game/practice summary strings."""
+    now = dt_util.utcnow()
+    upcoming_games: list[tuple[Any, dict]] = []
+    upcoming_practices: list[tuple[Any, dict]] = []
+
+    for event in events:
+        start = _event_start_value(event)
+        if not start:
+            continue
+        try:
+            event_time = dt_util.parse_datetime(start)
+            if not event_time or event_time <= now:
+                continue
+        except (ValueError, TypeError):
+            continue
+
+        event_type = (event.get("type") or event.get("event_type") or "").lower()
+        if "game" in event_type or "match" in event_type:
+            upcoming_games.append((event_time, event))
+        elif "practice" in event_type:
+            upcoming_practices.append((event_time, event))
+
+    upcoming_games.sort(key=lambda x: x[0])
+    upcoming_practices.sort(key=lambda x: x[0])
+
+    games_list = [_format_upcoming_game(e) for _, e in upcoming_games[:MAX_UPCOMING_GAMES]]
+    practices_list = [
+        _format_upcoming_practice(e) for _, e in upcoming_practices[:MAX_UPCOMING_PRACTICES]
+    ]
+
+    next_game_str = _format_upcoming_game(upcoming_games[0][1]) if upcoming_games else None
+    next_practice_str = (
+        _format_upcoming_practice(upcoming_practices[0][1]) if upcoming_practices else None
+    )
+
+    return games_list, practices_list, next_game_str, next_practice_str
+
+
+async def _add_new_team_sensors(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: TeamSnapDataUpdateCoordinator,
+) -> None:
+    """Check for new teams in coordinator data and add sensors for them."""
+    meta = (hass.data.get(DOMAIN) or {}).get("_sensor_meta", {}).get(entry.entry_id)
+    if not meta:
+        return
+    data = coordinator.data
+    if not data:
+        return
+    teams = data.get("teams", [])
+    existing_ids = meta["team_sensor_ids"]
+    new_teams = [
+        t
+        for t in teams
+        if isinstance(t, dict)
+        and t.get("id") is not None
+        and t.get("id") not in existing_ids
+    ]
+    if not new_teams:
+        return
+    for team in new_teams:
+        existing_ids.add(team.get("id"))
+    new_entities = [
+        TeamSnapTeamScheduleSensor(coordinator, team) for team in new_teams
+    ]
+    add_entities = meta["add_entities"]
+    await add_entities(new_entities)
+    _LOGGER.debug("Added %d new team schedule sensor(s)", len(new_entities))
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -74,12 +191,36 @@ async def async_setup_entry(
 
     coordinator: TeamSnapDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    entities = [
+    # Store callback and team IDs so we can add new team sensors when coordinator updates
+    hass.data[DOMAIN].setdefault("_sensor_meta", {})[entry.entry_id] = {
+        "add_entities": async_add_entities,
+        "team_sensor_ids": set(),
+    }
+    meta = hass.data[DOMAIN]["_sensor_meta"][entry.entry_id]
+
+    # Ensure we have data so we can create per-team sensors
+    if coordinator.data is None:
+        await coordinator.async_request_refresh()
+
+    entities: list[SensorEntity] = [
         TeamSnapSensor(coordinator, description)
         for description in SENSOR_DESCRIPTIONS
     ]
 
+    teams = (coordinator.data or {}).get("teams", [])
+    for team in teams:
+        if not isinstance(team, dict) or team.get("id") is None:
+            continue
+        meta["team_sensor_ids"].add(team.get("id"))
+        entities.append(TeamSnapTeamScheduleSensor(coordinator, team))
+
     async_add_entities(entities)
+
+    # When coordinator updates, check for new teams and add sensors for them
+    def _listen() -> None:
+        hass.async_create_task(_add_new_team_sensors(hass, entry, coordinator))
+
+    coordinator.async_add_listener(_listen)
 
 
 class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEntity):
@@ -111,7 +252,7 @@ class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEnt
         if key == "next_game":
             next_game = data.get("next_game")
             if next_game:
-                start_date = next_game.get("start_date")
+                start_date = next_game.get("start_date") or next_game.get("starts_at")
                 if start_date:
                     try:
                         dt = dt_util.parse_datetime(start_date)
@@ -127,7 +268,7 @@ class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEnt
         if key == "next_practice":
             next_practice = data.get("next_practice")
             if next_practice:
-                start_date = next_practice.get("start_date")
+                start_date = next_practice.get("start_date") or next_practice.get("starts_at")
                 if start_date:
                     try:
                         dt = dt_util.parse_datetime(start_date)
@@ -152,7 +293,7 @@ class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEnt
         next_game = data.get("next_game")
         if next_game:
             attrs[ATTR_NEXT_GAME] = next_game.get("name", "Unknown")
-            start_date = next_game.get("start_date")
+            start_date = next_game.get("start_date") or next_game.get("starts_at")
             if start_date:
                 try:
                     dt = dt_util.parse_datetime(start_date)
@@ -195,3 +336,71 @@ class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEnt
         attrs[ATTR_UPCOMING_EVENTS] = data.get("upcoming_events_count", 0)
 
         return attrs
+
+
+class TeamSnapTeamScheduleSensor(
+    CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEntity
+):
+    """Sensor that lists upcoming games and practices for a single team."""
+
+    _attr_icon = "mdi:calendar-list"
+    _attr_native_unit_of_measurement = "events"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: TeamSnapDataUpdateCoordinator,
+        team: dict[str, Any],
+    ) -> None:
+        """Initialize the per-team schedule sensor."""
+        super().__init__(coordinator)
+        self._team = team
+        team_id = team.get("id")
+        team_name = team.get("name", "Unknown")
+        entry_id = (
+            getattr(coordinator.config_entry, "entry_id", "unknown")
+            if coordinator.config_entry
+            else "unknown"
+        )
+        self._attr_unique_id = f"{entry_id}_team_{team_id}"
+        self._attr_name = f"TeamSnap Upcoming - {team_name}"
+
+    @property
+    def native_value(self) -> int:
+        """Return the number of upcoming events for this team."""
+        data = self.coordinator.data
+        if not data:
+            return 0
+        events_by_team = data.get("events", {})
+        team_id = self._team.get("id")
+        events = events_by_team.get(team_id, [])
+        games_list, practices_list, _, _ = _build_team_upcoming_lists(events)
+        return len(games_list) + len(practices_list)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return upcoming games and practices lists for this team."""
+        data = self.coordinator.data
+        if not data:
+            return {
+                ATTR_TEAM_ID: self._team.get("id"),
+                ATTR_TEAM_NAME: self._team.get("name", "Unknown"),
+                "upcoming_games": [],
+                "upcoming_practices": [],
+                "next_game": None,
+                "next_practice": None,
+            }
+        events_by_team = data.get("events", {})
+        team_id = self._team.get("id")
+        events = events_by_team.get(team_id, [])
+        games_list, practices_list, next_game_str, next_practice_str = (
+            _build_team_upcoming_lists(events)
+        )
+        return {
+            ATTR_TEAM_ID: team_id,
+            ATTR_TEAM_NAME: self._team.get("name", "Unknown"),
+            "upcoming_games": games_list,
+            "upcoming_practices": practices_list,
+            "next_game": next_game_str,
+            "next_practice": next_practice_str,
+        }

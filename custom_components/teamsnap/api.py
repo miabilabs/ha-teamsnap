@@ -17,8 +17,38 @@ class TeamSnapAPIError(Exception):
     """Base exception for TeamSnap API errors."""
 
 
+def _parse_collection_items(response: dict[str, Any]) -> list[dict[str, Any]]:
+    """Parse TeamSnap Collection+JSON response into a list of flat dicts.
+
+    TeamSnap API v3 uses Collection+JSON: collection.items[].data is a list of
+    {"name": key, "value": value}. We convert each item to {key: value, ...}.
+    """
+    result: list[dict[str, Any]] = []
+    collection = response.get("collection") if isinstance(response, dict) else None
+    if not isinstance(collection, dict):
+        return result
+    items = collection.get("items")
+    if not isinstance(items, list):
+        if "error" in collection:
+            _LOGGER.warning("API returned error: %s", collection.get("error"))
+        return result
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        data = item.get("data")
+        if not isinstance(data, list):
+            continue
+        flat: dict[str, Any] = {}
+        for entry in data:
+            if isinstance(entry, dict) and "name" in entry:
+                flat[entry["name"]] = entry.get("value")
+        if flat:
+            result.append(flat)
+    return result
+
+
 class TeamSnapAPIClient:
-    """Client for interacting with TeamSnap API v3."""
+    """Client for interacting with TeamSnap API v3 (Collection+JSON)."""
 
     def __init__(
         self,
@@ -63,40 +93,39 @@ class TeamSnapAPIClient:
                 _LOGGER.warning("Response was not JSON, returning empty dict")
                 return {}
 
-            return data
+            return data if isinstance(data, dict) else {}
 
         except asyncio.TimeoutError as err:
             _LOGGER.error("Timeout communicating with TeamSnap API: %s", err)
             raise TeamSnapAPIError(f"API request timed out: {err}") from err
 
     async def async_get_user(self) -> dict[str, Any]:
-        """Get the authenticated user's information."""
-        return await self._request("GET", "/me")
+        """Get the authenticated user's information (flat dict from Collection+JSON)."""
+        data = await self._request("GET", "/me")
+        items = _parse_collection_items(data)
+        return items[0] if items else {}
 
     async def async_get_teams(self) -> list[dict[str, Any]]:
         """Get all teams for the authenticated user."""
-        data = await self._request("GET", "/teams")
-        # TeamSnap API returns data in a collection format
-        if isinstance(data, dict) and "collection" in data:
-            return data["collection"]
-        if isinstance(data, list):
-            return data
-        return []
+        user = await self.async_get_user()
+        user_id = user.get("id")
+        if user_id is None:
+            _LOGGER.warning("No user id from /me")
+            return []
+        data = await self._request("GET", f"/teams/search?user_id={user_id}")
+        return _parse_collection_items(data)
 
     async def async_get_team_events(
         self, team_id: int | str
     ) -> list[dict[str, Any]]:
         """Get all events for a specific team."""
-        data = await self._request("GET", f"/teams/{team_id}/events")
-        # TeamSnap API returns data in a collection format
-        if isinstance(data, dict) and "collection" in data:
-            return data["collection"]
-        if isinstance(data, list):
-            return data
-        return []
+        data = await self._request("GET", f"/events/search?team_id={team_id}")
+        return _parse_collection_items(data)
 
     async def async_get_event(
         self, event_id: int | str
     ) -> dict[str, Any]:
         """Get details for a specific event."""
-        return await self._request("GET", f"/events/{event_id}")
+        data = await self._request("GET", f"/events/{event_id}")
+        items = _parse_collection_items(data)
+        return items[0] if items else {}
