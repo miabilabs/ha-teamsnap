@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 from typing import Any
 
@@ -39,9 +39,20 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from TeamSnap API."""
         try:
-            # Fetch user's teams
-            teams = await self.api_client.async_get_teams()
-            if not teams:
+            # Fetch user's teams and keep only active (non-archived) teams
+            all_teams = await self.api_client.async_get_teams()
+            teams = [
+                t
+                for t in (all_teams or [])
+                if isinstance(t, dict)
+                and t.get("is_archived_season") is not True
+            ]
+            if not teams and all_teams:
+                _LOGGER.debug(
+                    "All %d team(s) are archived; showing none",
+                    len(all_teams),
+                )
+            elif not teams:
                 _LOGGER.warning("No teams found for user")
             self._teams = teams
 
@@ -83,8 +94,24 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
     def _event_start_value(self, event: dict[str, Any]) -> str | None:
-        """Get start date/time from event (TeamSnap uses start_date or starts_at)."""
+        """Get start date/time string from event for display."""
         return event.get("start_date") or event.get("starts_at")
+
+    def _parse_event_start(self, event: dict[str, Any]) -> datetime | None:
+        """Parse event start into timezone-aware datetime. Handles start_date + start_time or single field."""
+        start_date = event.get("start_date") or event.get("starts_at")
+        start_time = event.get("start_time")
+        if start_date and start_time and "T" not in str(start_date) and " " not in str(start_date):
+            # TeamSnap may return date and time separately; combine for parsing
+            combined = f"{start_date}T{start_time}"
+            dt = dt_util.parse_datetime(combined)
+        elif start_date:
+            dt = dt_util.parse_datetime(start_date)
+        else:
+            dt = None
+        if dt is not None and dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
 
     def _get_next_game(
         self, events_by_team: dict[int, list[dict[str, Any]]]
@@ -102,21 +129,14 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if "game" not in event_type and "match" not in event_type:
                     continue
 
-                start_date = self._event_start_value(event)
-                if not start_date:
-                    continue
-
-                try:
-                    event_time = dt_util.parse_datetime(start_date)
-                    if event_time and event_time > now:
-                        if next_game_time is None or event_time < next_game_time:
-                            next_game_time = event_time
-                            next_game = {
-                                **event,
-                                "team_id": team_id,
-                            }
-                except (ValueError, TypeError):
-                    continue
+                event_time = self._parse_event_start(event)
+                if event_time and event_time > now:
+                    if next_game_time is None or event_time < next_game_time:
+                        next_game_time = event_time
+                        next_game = {
+                            **event,
+                            "team_id": team_id,
+                        }
 
         return next_game
 
@@ -136,21 +156,14 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if "practice" not in event_type:
                     continue
 
-                start_date = self._event_start_value(event)
-                if not start_date:
-                    continue
-
-                try:
-                    event_time = dt_util.parse_datetime(start_date)
-                    if event_time and event_time > now:
-                        if next_practice_time is None or event_time < next_practice_time:
-                            next_practice_time = event_time
-                            next_practice = {
-                                **event,
-                                "team_id": team_id,
-                            }
-                except (ValueError, TypeError):
-                    continue
+                event_time = self._parse_event_start(event)
+                if event_time and event_time > now:
+                    if next_practice_time is None or event_time < next_practice_time:
+                        next_practice_time = event_time
+                        next_practice = {
+                            **event,
+                            "team_id": team_id,
+                        }
 
         return next_practice
 
@@ -163,16 +176,9 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         for events in events_by_team.values():
             for event in events:
-                start_date = self._event_start_value(event)
-                if not start_date:
-                    continue
-
-                try:
-                    event_time = dt_util.parse_datetime(start_date)
-                    if event_time and event_time > now:
-                        count += 1
-                except (ValueError, TypeError):
-                    continue
+                event_time = self._parse_event_start(event)
+                if event_time and event_time > now:
+                    count += 1
 
         return count
 

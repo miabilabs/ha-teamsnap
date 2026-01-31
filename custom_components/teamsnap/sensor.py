@@ -63,8 +63,26 @@ SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
 
 
 def _event_start_value(event: dict[str, Any]) -> str | None:
-    """Get start date/time from event."""
+    """Get start date/time string from event for display."""
     return event.get("start_date") or event.get("starts_at")
+
+
+def _parse_event_start_datetime(event: dict[str, Any]) -> datetime | None:
+    """Parse event start into timezone-aware datetime. Handles start_date + start_time or single field."""
+    from datetime import timezone as tz
+
+    start_date = event.get("start_date") or event.get("starts_at")
+    start_time = event.get("start_time")
+    if start_date and start_time and "T" not in str(start_date) and " " not in str(start_date):
+        combined = f"{start_date}T{start_time}"
+        dt = dt_util.parse_datetime(combined)
+    elif start_date:
+        dt = dt_util.parse_datetime(start_date)
+    else:
+        dt = None
+    if dt is not None and dt.tzinfo is None:
+        dt = dt.replace(tzinfo=tz.utc)
+    return dt
 
 
 def _format_upcoming_game(event: dict[str, Any]) -> str:
@@ -110,14 +128,8 @@ def _build_team_upcoming_lists(
     upcoming_practices: list[tuple[Any, dict]] = []
 
     for event in events:
-        start = _event_start_value(event)
-        if not start:
-            continue
-        try:
-            event_time = dt_util.parse_datetime(start)
-            if not event_time or event_time <= now:
-                continue
-        except (ValueError, TypeError):
+        event_time = _parse_event_start_datetime(event)
+        if not event_time or event_time <= now:
             continue
 
         event_type = (event.get("type") or event.get("event_type") or "").lower()
@@ -252,14 +264,13 @@ class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEnt
         if key == "next_game":
             next_game = data.get("next_game")
             if next_game:
-                start_date = next_game.get("start_date") or next_game.get("starts_at")
-                if start_date:
-                    try:
-                        dt = dt_util.parse_datetime(start_date)
-                        if dt:
-                            return dt_util.as_local(dt)
-                    except (ValueError, TypeError):
-                        pass
+                dt = _parse_event_start_datetime(next_game)
+                if dt:
+                    return dt_util.as_local(dt)
+                _LOGGER.debug(
+                    "Next game event has no parseable start; keys: %s",
+                    list(next_game.keys()),
+                )
             return None
 
         if key == "upcoming_events_count":
@@ -268,14 +279,13 @@ class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEnt
         if key == "next_practice":
             next_practice = data.get("next_practice")
             if next_practice:
-                start_date = next_practice.get("start_date") or next_practice.get("starts_at")
-                if start_date:
-                    try:
-                        dt = dt_util.parse_datetime(start_date)
-                        if dt:
-                            return dt_util.as_local(dt)
-                    except (ValueError, TypeError):
-                        pass
+                dt = _parse_event_start_datetime(next_practice)
+                if dt:
+                    return dt_util.as_local(dt)
+                _LOGGER.debug(
+                    "Next practice event has no parseable start; keys: %s",
+                    list(next_practice.keys()),
+                )
             return None
 
         return None
@@ -293,15 +303,10 @@ class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEnt
         next_game = data.get("next_game")
         if next_game:
             attrs[ATTR_NEXT_GAME] = next_game.get("name", "Unknown")
-            start_date = next_game.get("start_date") or next_game.get("starts_at")
-            if start_date:
-                try:
-                    dt = dt_util.parse_datetime(start_date)
-                    if dt:
-                        attrs[ATTR_NEXT_GAME_DATE] = dt.strftime("%Y-%m-%d")
-                        attrs[ATTR_NEXT_GAME_TIME] = dt.strftime("%H:%M")
-                except (ValueError, TypeError):
-                    pass
+            dt = _parse_event_start_datetime(next_game)
+            if dt:
+                attrs[ATTR_NEXT_GAME_DATE] = dt.strftime("%Y-%m-%d")
+                attrs[ATTR_NEXT_GAME_TIME] = dt.strftime("%H:%M")
             attrs[ATTR_NEXT_GAME_LOCATION] = next_game.get("location_name", "Unknown")
             attrs[ATTR_NEXT_GAME_OPPONENT] = next_game.get("opponent_name", "Unknown")
             attrs[ATTR_TEAM_ID] = next_game.get("team_id")
@@ -343,7 +348,7 @@ class TeamSnapTeamScheduleSensor(
 ):
     """Sensor that lists upcoming games and practices for a single team."""
 
-    _attr_icon = "mdi:calendar-list"
+    _attr_icon = "mdi:calendar-multiple"
     _attr_native_unit_of_measurement = "events"
     _attr_state_class = SensorStateClass.MEASUREMENT
 
