@@ -63,7 +63,10 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 team_id = team.get("id")
                 if team_id:
                     try:
-                        events = await self.api_client.async_get_team_events(team_id)
+                        team_links = team.get("_links")
+                        events = await self.api_client.async_get_team_events(
+                            team_id, team_links
+                        )
                         events_by_team[team_id] = events
                     except TeamSnapAPIError as err:
                         _LOGGER.warning(
@@ -75,12 +78,24 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._events = events_by_team
 
             # Process and structure the data
+            next_game = self._get_next_game(events_by_team)
+            next_practice = self._get_next_practice(events_by_team)
+            upcoming_count = self._count_upcoming_events(events_by_team)
+            _LOGGER.info(
+                "TeamSnap: update complete - %d team(s), %d event set(s), "
+                "next_game=%s, next_practice=%s, upcoming_events=%d",
+                len(teams),
+                len(events_by_team),
+                "yes" if next_game else "no",
+                "yes" if next_practice else "no",
+                upcoming_count,
+            )
             return {
                 "teams": teams,
                 "events": events_by_team,
-                "next_game": self._get_next_game(events_by_team),
-                "next_practice": self._get_next_practice(events_by_team),
-                "upcoming_events_count": self._count_upcoming_events(events_by_team),
+                "next_game": next_game,
+                "next_practice": next_practice,
+                "upcoming_events_count": upcoming_count,
             }
         except ConfigEntryAuthFailed:
             raise

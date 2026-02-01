@@ -239,6 +239,32 @@ If you're still experiencing issues after following these steps:
 9. **Check the GitHub Issues** at [https://github.com/miabilabs/ha-teamsnap/issues](https://github.com/miabilabs/ha-teamsnap/issues)
 10. **Create a new issue** with the collected information
 
+## Sensors Show "Unknown"
+
+If all TeamSnap sensors show a status of **Unknown** (or **0** for counts) after adding or re-adding the integration, the integration may not be parsing the TeamSnap API response correctly.
+
+### What to check in logs
+
+1. **Enable debug logging** for the integration (see Step 1 under "missing_configuration" above, or use **Settings** → **Devices & Services** → **TeamSnap** → ⋮ → **Enable debug logging**).
+2. **Reload the TeamSnap integration** or wait for the next coordinator refresh (about 15 minutes).
+3. **Check the logs** for these messages:
+   - **`TeamSnap API: GET /me returned no user data. Response keys: ...`**  
+     If you see this, the `/me` response is empty or has a different structure. The "Response keys" value shows the top-level keys in the API response (e.g. `['collection']` means we got a body but no parsed user).
+   - **`TeamSnap API: GET teams/search returned N team(s) for user_id=X`**  
+     This confirms we got a user and how many teams were returned. If N is 0, teams are empty.
+   - **`TeamSnap: update complete - N team(s), M event set(s), next_game=..., next_practice=..., upcoming_events=K`**  
+     This summarizes what the coordinator stored. If `next_game=no` and `next_practice=no`, we have no upcoming games/practices (or event parsing failed).
+
+### What to report
+
+If sensors stay Unknown, please open an issue and include (with any secrets removed):
+
+- The exact **"Response keys"** line from the `/me` warning (if present).
+- The **"TeamSnap: update complete"** line from the logs.
+- Whether you see **"GET teams/search returned 0 team(s)"** or a non-zero count.
+
+That will show whether the problem is user parsing, team parsing, or event/date parsing so we can fix the API parsing.
+
 ## Common Error Messages
 
 ### "missing_configuration"
