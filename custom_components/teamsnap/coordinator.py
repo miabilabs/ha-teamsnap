@@ -82,6 +82,8 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "next_practice": self._get_next_practice(events_by_team),
                 "upcoming_events_count": self._count_upcoming_events(events_by_team),
             }
+        except ConfigEntryAuthFailed:
+            raise
         except TeamSnapAPIError as err:
             error_msg = str(err)
             if "Authentication failed" in error_msg or "401" in error_msg:

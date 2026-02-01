@@ -8,6 +8,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import config_entry_oauth2_flow
 
 from .api import TeamSnapAPIClient
@@ -42,11 +43,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Fetch initial data so we have data when entities are added
     try:
         await coordinator.async_config_entry_first_refresh()
+    except ConfigEntryAuthFailed:
+        raise
     except Exception as err:
         _LOGGER.warning(
             "Failed to fetch initial data from TeamSnap: %s. "
             "The integration will continue to retry.",
-            err
+            err,
         )
         # Don't fail setup if initial fetch fails - coordinator will retry
 
