@@ -81,6 +81,31 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             next_game = self._get_next_game(events_by_team)
             next_practice = self._get_next_practice(events_by_team)
             upcoming_count = self._count_upcoming_events(events_by_team)
+
+            # Debug: log first event structure when next game/practice not found
+            if (not next_game or not next_practice) and events_by_team:
+                first_team_id = next(iter(events_by_team))
+                first_events = events_by_team[first_team_id]
+                if first_events:
+                    sample = first_events[0]
+                    _LOGGER.debug(
+                        "TeamSnap event sample (team_id=%s) keys: %s; "
+                        "type=%s, event_type=%s, event_type_id=%s, name=%s; "
+                        "start_date=%s, starts_at=%s, start_time=%s, start=%s, game_date=%s, date=%s",
+                        first_team_id,
+                        list(sample.keys()),
+                        sample.get("type"),
+                        sample.get("event_type"),
+                        sample.get("event_type_id"),
+                        sample.get("name"),
+                        sample.get("start_date"),
+                        sample.get("starts_at"),
+                        sample.get("start_time"),
+                        sample.get("start"),
+                        sample.get("game_date"),
+                        sample.get("date"),
+                    )
+
             _LOGGER.info(
                 "TeamSnap: update complete - %d team(s), %d event set(s), "
                 "next_game=%s, next_practice=%s, upcoming_events=%d",
@@ -115,14 +140,41 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _event_start_value(self, event: dict[str, Any]) -> str | None:
         """Get start date/time string from event for display."""
-        return event.get("start_date") or event.get("starts_at")
+        return (
+            event.get("start_date")
+            or event.get("starts_at")
+            or event.get("start")
+            or event.get("game_date")
+            or event.get("date")
+        )
+
+    def _get_event_type_str(self, event: dict[str, Any]) -> str:
+        """Return a string we can check for game/practice; tries type, event_type, event_type_id, name, kind."""
+        # TeamSnap may use type, event_type, event_type_id (e.g. 1=game, 2=practice), or name
+        t = event.get("type") or event.get("event_type") or event.get("kind") or ""
+        if isinstance(t, (int, float)):
+            t = str(int(t))
+        elif not isinstance(t, str):
+            t = ""
+        name = event.get("name") or ""
+        if isinstance(name, str):
+            t = f"{t} {name}"
+        etid = event.get("event_type_id")
+        if etid is not None:
+            t = f"{t} {etid}"
+        return t.lower()
 
     def _parse_event_start(self, event: dict[str, Any]) -> datetime | None:
-        """Parse event start into timezone-aware datetime. Handles start_date + start_time or single field."""
-        start_date = event.get("start_date") or event.get("starts_at")
+        """Parse event start into timezone-aware datetime. Tries multiple field names."""
+        start_date = (
+            event.get("start_date")
+            or event.get("starts_at")
+            or event.get("start")
+            or event.get("game_date")
+            or event.get("date")
+        )
         start_time = event.get("start_time")
         if start_date and start_time and "T" not in str(start_date) and " " not in str(start_date):
-            # TeamSnap may return date and time separately; combine for parsing
             combined = f"{start_date}T{start_time}"
             dt = dt_util.parse_datetime(combined)
         elif start_date:
@@ -143,10 +195,14 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         for team_id, events in events_by_team.items():
             for event in events:
-                event_type = (
-                    event.get("type") or event.get("event_type") or ""
-                ).lower()
-                if "game" not in event_type and "match" not in event_type:
+                event_type_str = self._get_event_type_str(event)
+                # event_type_id 1 is often "game" in TeamSnap
+                is_game = (
+                    "game" in event_type_str
+                    or "match" in event_type_str
+                    or event.get("event_type_id") == 1
+                )
+                if not is_game:
                     continue
 
                 event_time = self._parse_event_start(event)
@@ -170,10 +226,13 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         for team_id, events in events_by_team.items():
             for event in events:
-                event_type = (
-                    event.get("type") or event.get("event_type") or ""
-                ).lower()
-                if "practice" not in event_type:
+                event_type_str = self._get_event_type_str(event)
+                # event_type_id 2 is often "practice" in TeamSnap
+                is_practice = (
+                    "practice" in event_type_str
+                    or event.get("event_type_id") == 2
+                )
+                if not is_practice:
                     continue
 
                 event_time = self._parse_event_start(event)

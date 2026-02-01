@@ -64,14 +64,42 @@ SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
 
 def _event_start_value(event: dict[str, Any]) -> str | None:
     """Get start date/time string from event for display."""
-    return event.get("start_date") or event.get("starts_at")
+    return (
+        event.get("start_date")
+        or event.get("starts_at")
+        or event.get("start")
+        or event.get("game_date")
+        or event.get("date")
+    )
+
+
+def _get_event_type_str(event: dict[str, Any]) -> str:
+    """Return a string we can check for game/practice; tries type, event_type, event_type_id, name, kind."""
+    t = event.get("type") or event.get("event_type") or event.get("kind") or ""
+    if isinstance(t, (int, float)):
+        t = str(int(t))
+    elif not isinstance(t, str):
+        t = ""
+    name = event.get("name") or ""
+    if isinstance(name, str):
+        t = f"{t} {name}"
+    etid = event.get("event_type_id")
+    if etid is not None:
+        t = f"{t} {etid}"
+    return t.lower()
 
 
 def _parse_event_start_datetime(event: dict[str, Any]) -> datetime | None:
-    """Parse event start into timezone-aware datetime. Handles start_date + start_time or single field."""
+    """Parse event start into timezone-aware datetime. Tries multiple field names."""
     from datetime import timezone as tz
 
-    start_date = event.get("start_date") or event.get("starts_at")
+    start_date = (
+        event.get("start_date")
+        or event.get("starts_at")
+        or event.get("start")
+        or event.get("game_date")
+        or event.get("date")
+    )
     start_time = event.get("start_time")
     if start_date and start_time and "T" not in str(start_date) and " " not in str(start_date):
         combined = f"{start_date}T{start_time}"
@@ -132,10 +160,19 @@ def _build_team_upcoming_lists(
         if not event_time or event_time <= now:
             continue
 
-        event_type = (event.get("type") or event.get("event_type") or "").lower()
-        if "game" in event_type or "match" in event_type:
+        event_type_str = _get_event_type_str(event)
+        is_game = (
+            "game" in event_type_str
+            or "match" in event_type_str
+            or event.get("event_type_id") == 1
+        )
+        is_practice = (
+            "practice" in event_type_str
+            or event.get("event_type_id") == 2
+        )
+        if is_game:
             upcoming_games.append((event_time, event))
-        elif "practice" in event_type:
+        elif is_practice:
             upcoming_practices.append((event_time, event))
 
     upcoming_games.sort(key=lambda x: x[0])
