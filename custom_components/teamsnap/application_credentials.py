@@ -4,15 +4,17 @@ from __future__ import annotations
 
 from homeassistant.components.application_credentials import ClientCredential
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.config_entry_oauth2_flow import (
     LocalOAuth2Implementation,
 )
 
 from .const import OAUTH2_AUTHORIZE_URL, OAUTH2_TOKEN_URL
 
-# Default token lifetime when TeamSnap does not return expires_in (seconds).
-# TeamSnap returns created_at but not expires_in; HA requires expires_in.
-DEFAULT_TOKEN_EXPIRES_IN = 7200  # 2 hours
+# Token lifetime we tell Home Assistant when TeamSnap does not return expires_in.
+# TeamSnap does not provide refresh_token, so we use a long value (30 days) so HA
+# does not try to refresh; re-auth is triggered when the API returns 401 instead.
+DEFAULT_TOKEN_EXPIRES_IN = 2592000  # 30 days
 
 
 class TeamSnapOAuth2Implementation(LocalOAuth2Implementation):
@@ -24,6 +26,14 @@ class TeamSnapOAuth2Implementation(LocalOAuth2Implementation):
         if "expires_in" not in token:
             token["expires_in"] = DEFAULT_TOKEN_EXPIRES_IN
         return token
+
+    async def async_refresh_token(self, token):
+        """Refresh token. TeamSnap does not provide refresh_token; trigger re-auth when needed."""
+        if not token.get("refresh_token"):
+            raise ConfigEntryAuthFailed(
+                "TeamSnap does not provide refresh tokens; please re-authenticate the integration."
+            )
+        return await super().async_refresh_token(token)
 
 
 async def async_get_auth_implementation(

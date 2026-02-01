@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -84,10 +85,12 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except TeamSnapAPIError as err:
             error_msg = str(err)
             if "Authentication failed" in error_msg or "401" in error_msg:
-                _LOGGER.error(
-                    "Authentication failed - token may be expired. "
-                    "Please reconfigure the integration."
+                _LOGGER.warning(
+                    "TeamSnap token expired or invalid; re-authentication required"
                 )
+                raise ConfigEntryAuthFailed(
+                    "TeamSnap token expired or invalid; please re-authenticate the integration."
+                ) from err
             raise UpdateFailed(f"Error fetching TeamSnap data: {err}") from err
         except Exception as err:
             _LOGGER.exception("Unexpected error fetching TeamSnap data: %s", err)
