@@ -15,6 +15,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
@@ -39,7 +40,23 @@ _LOGGER = logging.getLogger(__name__)
 MAX_UPCOMING_GAMES = 20
 MAX_UPCOMING_PRACTICES = 20
 
+
+def _device_info(entry_id: str) -> DeviceInfo:
+    """Return DeviceInfo for the TeamSnap integration device (one per config entry)."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, entry_id)},
+        name="TeamSnap",
+        manufacturer="TeamSnap",
+        model="Schedule",
+    )
+
 SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
+    SensorEntityDescription(
+        key="next_event",
+        name="Next Event",
+        icon="mdi:calendar",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    ),
     SensorEntityDescription(
         key="next_game",
         name="Next Game",
@@ -191,6 +208,45 @@ def _build_team_upcoming_lists(
     return games_list, practices_list, next_game_str, next_practice_str
 
 
+def _get_team_next_event_game_practice(
+    events: list[dict[str, Any]],
+) -> tuple[
+    tuple[datetime | None, dict[str, Any] | None],
+    tuple[datetime | None, dict[str, Any] | None],
+    tuple[datetime | None, dict[str, Any] | None],
+]:
+    """Return (next_event_dt, next_event), (next_game_dt, next_game), (next_practice_dt, next_practice) for a team's events."""
+    now = dt_util.utcnow()
+    next_event: tuple[datetime | None, dict[str, Any] | None] = (None, None)
+    next_game: tuple[datetime | None, dict[str, Any] | None] = (None, None)
+    next_practice: tuple[datetime | None, dict[str, Any] | None] = (None, None)
+
+    for event in events:
+        event_time = _parse_event_start_datetime(event)
+        if not event_time or event_time <= now:
+            continue
+
+        event_type_str = _get_event_type_str(event)
+        is_game = (
+            "game" in event_type_str
+            or "match" in event_type_str
+            or event.get("event_type_id") == 1
+        )
+        is_practice = (
+            "practice" in event_type_str
+            or event.get("event_type_id") == 2
+        )
+
+        if next_event[0] is None or event_time < next_event[0]:
+            next_event = (event_time, event)
+        if is_game and (next_game[0] is None or event_time < next_game[0]):
+            next_game = (event_time, event)
+        if is_practice and (next_practice[0] is None or event_time < next_practice[0]):
+            next_practice = (event_time, event)
+
+    return next_event, next_game, next_practice
+
+
 async def _add_new_team_sensors(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -216,9 +272,12 @@ async def _add_new_team_sensors(
         return
     for team in new_teams:
         existing_ids.add(team.get("id"))
-    new_entities = [
-        TeamSnapTeamScheduleSensor(coordinator, team) for team in new_teams
-    ]
+    new_entities: list[SensorEntity] = []
+    for team in new_teams:
+        new_entities.append(TeamSnapTeamScheduleSensor(coordinator, team))
+        new_entities.append(TeamSnapTeamNextEventSensor(coordinator, team))
+        new_entities.append(TeamSnapTeamNextGameSensor(coordinator, team))
+        new_entities.append(TeamSnapTeamNextPracticeSensor(coordinator, team))
     add_entities = meta["add_entities"]
     await add_entities(new_entities)
     _LOGGER.debug("Added %d new team schedule sensor(s)", len(new_entities))
@@ -262,6 +321,9 @@ async def async_setup_entry(
             continue
         meta["team_sensor_ids"].add(team.get("id"))
         entities.append(TeamSnapTeamScheduleSensor(coordinator, team))
+        entities.append(TeamSnapTeamNextEventSensor(coordinator, team))
+        entities.append(TeamSnapTeamNextGameSensor(coordinator, team))
+        entities.append(TeamSnapTeamNextPracticeSensor(coordinator, team))
 
     async_add_entities(entities)
 
@@ -284,10 +346,11 @@ class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEnt
         super().__init__(coordinator)
         self.entity_description = description
 
-        # Generate unique ID safely
-        entry_id = getattr(coordinator.config_entry, 'entry_id', 'unknown') if coordinator.config_entry else 'unknown'
+        # Generate unique ID safely and link to integration device
+        entry_id = getattr(coordinator.config_entry, "entry_id", "unknown") if coordinator.config_entry else "unknown"
         self._attr_unique_id = f"{entry_id}_{description.key}"
         self._attr_name = f"TeamSnap {description.name}"
+        self._attr_device_info = _device_info(entry_id)
 
     @property
     def native_value(self) -> datetime | int | None:
@@ -297,6 +360,18 @@ class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEnt
             return None
 
         key = self.entity_description.key
+
+        if key == "next_event":
+            next_event = data.get("next_event")
+            if next_event:
+                dt = _parse_event_start_datetime(next_event)
+                if dt:
+                    return dt_util.as_local(dt)
+                _LOGGER.debug(
+                    "Next event has no parseable start; keys: %s",
+                    list(next_event.keys()),
+                )
+            return None
 
         if key == "next_game":
             next_game = data.get("next_game")
@@ -335,6 +410,17 @@ class TeamSnapSensor(CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEnt
             return {}
 
         attrs: dict[str, Any] = {}
+
+        # Add next event attributes (any type)
+        next_event = data.get("next_event")
+        if next_event:
+            attrs["next_event"] = next_event.get("name", "Unknown")
+            dt = _parse_event_start_datetime(next_event)
+            if dt:
+                attrs["next_event_date"] = dt.strftime("%Y-%m-%d")
+                attrs["next_event_time"] = dt.strftime("%H:%M")
+            attrs["next_event_location"] = next_event.get("location_name", "Unknown")
+            attrs[ATTR_TEAM_ID] = next_event.get("team_id")
 
         # Add next game attributes
         next_game = data.get("next_game")
@@ -406,6 +492,7 @@ class TeamSnapTeamScheduleSensor(
         )
         self._attr_unique_id = f"{entry_id}_team_{team_id}"
         self._attr_name = f"TeamSnap Upcoming - {team_name}"
+        self._attr_device_info = _device_info(entry_id)
 
     @property
     def native_value(self) -> int:
@@ -446,3 +533,173 @@ class TeamSnapTeamScheduleSensor(
             "next_game": next_game_str,
             "next_practice": next_practice_str,
         }
+
+
+def _team_timestamp_sensor_attrs(
+    event: dict[str, Any] | None, team_name: str
+) -> dict[str, Any]:
+    """Build common attributes for per-team next event/game/practice sensors."""
+    if not event:
+        return {
+            ATTR_TEAM_NAME: team_name,
+            "name": None,
+            "date": None,
+            "time": None,
+            "location": None,
+            "opponent": None,
+        }
+    dt = _parse_event_start_datetime(event)
+    attrs: dict[str, Any] = {
+        ATTR_TEAM_NAME: team_name,
+        "name": event.get("name", "Unknown"),
+        "location": event.get("location_name") or event.get("location") or None,
+        "opponent": event.get("opponent_name") or event.get("opponent") or None,
+    }
+    if dt:
+        attrs["date"] = dt.strftime("%Y-%m-%d")
+        attrs["time"] = dt.strftime("%H:%M")
+    else:
+        attrs["date"] = None
+        attrs["time"] = None
+    return attrs
+
+
+class TeamSnapTeamNextEventSensor(
+    CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEntity
+):
+    """Next upcoming event (any type) for a single team."""
+
+    _attr_icon = "mdi:calendar"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(
+        self,
+        coordinator: TeamSnapDataUpdateCoordinator,
+        team: dict[str, Any],
+    ) -> None:
+        super().__init__(coordinator)
+        self._team = team
+        team_id = team.get("id")
+        team_name = team.get("name", "Unknown")
+        entry_id = (
+            getattr(coordinator.config_entry, "entry_id", "unknown")
+            if coordinator.config_entry
+            else "unknown"
+        )
+        self._attr_unique_id = f"{entry_id}_team_{team_id}_next_event"
+        self._attr_name = f"TeamSnap Next Event - {team_name}"
+        self._attr_device_info = _device_info(entry_id)
+
+    @property
+    def native_value(self) -> datetime | None:
+        data = self.coordinator.data
+        if not data:
+            return None
+        events = (data.get("events") or {}).get(self._team.get("id"), [])
+        (dt, _), _, _ = _get_team_next_event_game_practice(events)
+        return dt_util.as_local(dt) if dt else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self.coordinator.data
+        if not data:
+            return _team_timestamp_sensor_attrs(None, self._team.get("name", "Unknown"))
+        events = (data.get("events") or {}).get(self._team.get("id"), [])
+        (_, event), _, _ = _get_team_next_event_game_practice(events)
+        attrs = _team_timestamp_sensor_attrs(event, self._team.get("name", "Unknown"))
+        attrs[ATTR_TEAM_ID] = self._team.get("id")
+        return attrs
+
+
+class TeamSnapTeamNextGameSensor(
+    CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEntity
+):
+    """Next upcoming game for a single team."""
+
+    _attr_icon = "mdi:soccer"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(
+        self,
+        coordinator: TeamSnapDataUpdateCoordinator,
+        team: dict[str, Any],
+    ) -> None:
+        super().__init__(coordinator)
+        self._team = team
+        team_id = team.get("id")
+        team_name = team.get("name", "Unknown")
+        entry_id = (
+            getattr(coordinator.config_entry, "entry_id", "unknown")
+            if coordinator.config_entry
+            else "unknown"
+        )
+        self._attr_unique_id = f"{entry_id}_team_{team_id}_next_game"
+        self._attr_name = f"TeamSnap Next Game - {team_name}"
+        self._attr_device_info = _device_info(entry_id)
+
+    @property
+    def native_value(self) -> datetime | None:
+        data = self.coordinator.data
+        if not data:
+            return None
+        events = (data.get("events") or {}).get(self._team.get("id"), [])
+        _, (dt, _), _ = _get_team_next_event_game_practice(events)
+        return dt_util.as_local(dt) if dt else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self.coordinator.data
+        if not data:
+            return _team_timestamp_sensor_attrs(None, self._team.get("name", "Unknown"))
+        events = (data.get("events") or {}).get(self._team.get("id"), [])
+        _, (_, event), _ = _get_team_next_event_game_practice(events)
+        attrs = _team_timestamp_sensor_attrs(event, self._team.get("name", "Unknown"))
+        attrs[ATTR_TEAM_ID] = self._team.get("id")
+        return attrs
+
+
+class TeamSnapTeamNextPracticeSensor(
+    CoordinatorEntity[TeamSnapDataUpdateCoordinator], SensorEntity
+):
+    """Next upcoming practice for a single team."""
+
+    _attr_icon = "mdi:whistle"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(
+        self,
+        coordinator: TeamSnapDataUpdateCoordinator,
+        team: dict[str, Any],
+    ) -> None:
+        super().__init__(coordinator)
+        self._team = team
+        team_id = team.get("id")
+        team_name = team.get("name", "Unknown")
+        entry_id = (
+            getattr(coordinator.config_entry, "entry_id", "unknown")
+            if coordinator.config_entry
+            else "unknown"
+        )
+        self._attr_unique_id = f"{entry_id}_team_{team_id}_next_practice"
+        self._attr_name = f"TeamSnap Next Practice - {team_name}"
+        self._attr_device_info = _device_info(entry_id)
+
+    @property
+    def native_value(self) -> datetime | None:
+        data = self.coordinator.data
+        if not data:
+            return None
+        events = (data.get("events") or {}).get(self._team.get("id"), [])
+        _, _, (dt, _) = _get_team_next_event_game_practice(events)
+        return dt_util.as_local(dt) if dt else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self.coordinator.data
+        if not data:
+            return _team_timestamp_sensor_attrs(None, self._team.get("name", "Unknown"))
+        events = (data.get("events") or {}).get(self._team.get("id"), [])
+        _, _, (_, event) = _get_team_next_event_game_practice(events)
+        attrs = _team_timestamp_sensor_attrs(event, self._team.get("name", "Unknown"))
+        attrs[ATTR_TEAM_ID] = self._team.get("id")
+        return attrs

@@ -78,6 +78,7 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._events = events_by_team
 
             # Process and structure the data
+            next_event = self._get_next_event(events_by_team)
             next_game = self._get_next_game(events_by_team)
             next_practice = self._get_next_practice(events_by_team)
             upcoming_count = self._count_upcoming_events(events_by_team)
@@ -108,9 +109,10 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             _LOGGER.info(
                 "TeamSnap: update complete - %d team(s), %d event set(s), "
-                "next_game=%s, next_practice=%s, upcoming_events=%d",
+                "next_event=%s, next_game=%s, next_practice=%s, upcoming_events=%d",
                 len(teams),
                 len(events_by_team),
+                "yes" if next_event else "no",
                 "yes" if next_game else "no",
                 "yes" if next_practice else "no",
                 upcoming_count,
@@ -118,6 +120,7 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return {
                 "teams": teams,
                 "events": events_by_team,
+                "next_event": next_event,
                 "next_game": next_game,
                 "next_practice": next_practice,
                 "upcoming_events_count": upcoming_count,
@@ -184,6 +187,27 @@ class TeamSnapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if dt is not None and dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt
+
+    def _get_next_event(
+        self, events_by_team: dict[int, list[dict[str, Any]]]
+    ) -> dict[str, Any] | None:
+        """Get the next upcoming event (any type)."""
+        now = dt_util.utcnow()
+        next_event = None
+        next_event_time = None
+
+        for team_id, events in events_by_team.items():
+            for event in events:
+                event_time = self._parse_event_start(event)
+                if event_time and event_time > now:
+                    if next_event_time is None or event_time < next_event_time:
+                        next_event_time = event_time
+                        next_event = {
+                            **event,
+                            "team_id": team_id,
+                        }
+
+        return next_event
 
     def _get_next_game(
         self, events_by_team: dict[int, list[dict[str, Any]]]
